@@ -20,7 +20,7 @@ def base_datos_temporal(monkeypatch, tmp_path):
 
 @pytest.fixture
 def client(monkeypatch):
-    """Evita llamadas de red reales a Cobro y Arqueo durante las pruebas."""
+    """Evita llamadas de red reales al servicio de Arqueo durante las pruebas."""
     llamadas = []
 
     def fake_post(url, json=None, timeout=None):
@@ -57,13 +57,23 @@ def test_registrar_venta_exitosa(client):
     assert "id" in data and "fecha" in data
 
 
-def test_registrar_venta_notifica_a_cobro_y_arqueo(client):
+def test_registrar_venta_notifica_a_arqueo_como_esperado(client):
     payload = {"producto": "Ibuprofeno 400mg", "cantidad": 1, "precio_unitario": 3.0}
     client.post("/ventas", json=payload)
 
+    assert len(client.llamadas) == 1
+    url, body = client.llamadas[0]
+    assert "/arqueo/movimientos" in url
+    assert body["tipo"] == "esperado"
+    assert body["monto"] == 3.0
+
+
+def test_registrar_venta_no_llama_directamente_a_cobro(client):
+    payload = {"producto": "Alcohol en gel", "cantidad": 1, "precio_unitario": 8.0}
+    client.post("/ventas", json=payload)
+
     urls_llamadas = [url for url, _ in client.llamadas]
-    assert any("/cobros" in url for url in urls_llamadas)
-    assert any("/arqueo/movimientos" in url for url in urls_llamadas)
+    assert not any("/cobros" in url for url in urls_llamadas)
 
 
 def test_registrar_venta_cantidad_invalida(client):

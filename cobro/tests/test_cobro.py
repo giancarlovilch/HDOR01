@@ -18,8 +18,25 @@ def base_datos_temporal(monkeypatch, tmp_path):
 
 
 @pytest.fixture
-def client():
-    return TestClient(main.app)
+def client(monkeypatch):
+    """Evita llamadas de red reales al servicio de Arqueo durante las pruebas."""
+    llamadas = []
+
+    def fake_post(url, json=None, timeout=None):
+        llamadas.append((url, json))
+
+        class FakeResponse:
+            status_code = 201
+
+            def json(self_inner):
+                return {"ok": True}
+
+        return FakeResponse()
+
+    monkeypatch.setattr(main.requests, "post", fake_post)
+    test_client = TestClient(main.app)
+    test_client.llamadas = llamadas
+    return test_client
 
 
 def test_health(client):
@@ -45,6 +62,17 @@ def test_registrar_cobro_metodo_pago_por_defecto(client):
 
     assert response.status_code == 201
     assert response.json()["metodo_pago"] == "efectivo"
+
+
+def test_registrar_cobro_notifica_a_arqueo_como_cobrado(client):
+    payload = {"venta_id": 3, "monto": 9.9}
+    client.post("/cobros", json=payload)
+
+    assert len(client.llamadas) == 1
+    url, body = client.llamadas[0]
+    assert "/arqueo/movimientos" in url
+    assert body["tipo"] == "cobrado"
+    assert body["monto"] == 9.9
 
 
 def test_listar_cobros(client):

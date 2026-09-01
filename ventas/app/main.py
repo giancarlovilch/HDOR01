@@ -16,7 +16,6 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("ventas")
 
 DB_PATH = os.getenv("DB_PATH", "ventas.db")
-COBRO_URL = os.getenv("COBRO_URL", "http://localhost:8001")
 ARQUEO_URL = os.getenv("ARQUEO_URL", "http://localhost:8002")
 
 app = FastAPI(title="Servicio de Ventas - Farmacia", version="1.0.0")
@@ -87,23 +86,25 @@ def registrar_venta(venta: VentaIn):
     venta_id = cursor.lastrowid
     conn.close()
 
-    notificar_servicios(venta_id, total, fecha)
+    notificar_arqueo(venta_id, total, fecha)
 
     return VentaOut(id=venta_id, total=total, fecha=fecha, **venta.model_dump())
 
 
-def notificar_servicios(venta_id: int, total: float, fecha: str) -> None:
-    """Envia el resultado de la venta al Cobro y al Arqueo en paralelo logico.
+def notificar_arqueo(venta_id: int, total: float, fecha: str) -> None:
+    """Informa a Arqueo cuanto se esperaba cobrar por esta venta.
 
-    Si un servicio destino no responde, la venta ya quedo registrada
-    localmente: se registra el error pero no se revierte la venta.
+    Ventas NO le avisa a Cobro directamente: el registro del pago real
+    lo hace la cajera de forma independiente en el microservicio Cobro.
+    Si Arqueo no responde, la venta ya quedo registrada localmente: se
+    registra el error pero no se revierte la venta.
     """
-    payload = {"venta_id": venta_id, "monto": total, "fecha": fecha}
-
-    try:
-        requests.post(f"{COBRO_URL}/cobros", json=payload, timeout=5)
-    except requests.RequestException as exc:
-        logger.warning("No se pudo notificar al servicio de Cobro: %s", exc)
+    payload = {
+        "venta_id": venta_id,
+        "tipo": "esperado",
+        "monto": total,
+        "fecha": fecha,
+    }
 
     try:
         requests.post(f"{ARQUEO_URL}/arqueo/movimientos", json=payload, timeout=5)

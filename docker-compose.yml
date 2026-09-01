@@ -6,8 +6,12 @@ services:
       - "8001:8000"
     environment:
       - DB_PATH=/data/cobro.db
+      - ARQUEO_URL=http://arqueo:8000
     volumes:
       - cobro_data:/data
+    depends_on:
+      arqueo:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
@@ -36,13 +40,10 @@ services:
       - "8000:8000"
     environment:
       - DB_PATH=/data/ventas.db
-      - COBRO_URL=http://cobro:8000
       - ARQUEO_URL=http://arqueo:8000
     volumes:
       - ventas_data:/data
     depends_on:
-      cobro:
-        condition: service_healthy
       arqueo:
         condition: service_healthy
 
