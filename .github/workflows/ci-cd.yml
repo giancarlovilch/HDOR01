@@ -1,0 +1,113 @@
+name: CI/CD - Farmacia Microservicios
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+  workflow_dispatch:
+
+jobs:
+
+  compilacion:
+    name: "1. Compilacion (${{ matrix.service }})"
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [ventas, cobro, arqueo]
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        working-directory: ${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Compilar / verificar sintaxis del servicio
+        working-directory: ${{ matrix.service }}
+        run: python -m compileall -q app
+
+  pruebas:
+    name: "2. Pruebas automatizadas (${{ matrix.service }})"
+    needs: compilacion
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service: [ventas, cobro, arqueo]
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Configurar Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Instalar dependencias
+        working-directory: ${{ matrix.service }}
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements-dev.txt
+
+      - name: Ejecutar pruebas con pytest
+        working-directory: ${{ matrix.service }}
+        run: pytest -v --tb=short
+
+  despliegue:
+    name: "3. Despliegue real en contenedores Docker"
+    needs: pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del codigo
+        uses: actions/checkout@v4
+
+      - name: Construir las imagenes Docker de los 3 microservicios
+        run: docker compose build
+
+      - name: Levantar los contenedores
+        run: docker compose up -d
+
+      - name: Esperar a que los 3 microservicios esten saludables
+        run: |
+          for i in $(seq 1 15); do
+            if curl -sf http://localhost:8000/health \
+              && curl -sf http://localhost:8001/health \
+              && curl -sf http://localhost:8002/health; then
+              echo "Los 3 microservicios estan saludables"
+              exit 0
+            fi
+            echo "Esperando a los microservicios... intento $i"
+            sleep 3
+          done
+          echo "Los microservicios no respondieron a tiempo"
+          docker compose logs
+          exit 1
+
+      - name: Prueba de humo end-to-end (venta -> cobro -> arqueo)
+        run: |
+          echo "Registrando una venta de prueba..."
+          curl -sf -X POST http://localhost:8000/ventas \
+            -H "Content-Type: application/json" \
+            -d '{"producto": "Paracetamol 500mg", "cantidad": 2, "precio_unitario": 5.50}'
+          echo
+          sleep 2
+          echo "Cobros registrados:"
+          curl -sf http://localhost:8001/cobros
+          echo
+          echo "Resumen de arqueo del dia:"
+          curl -sf http://localhost:8002/arqueo/resumen
+
+      - name: Mostrar logs de los contenedores
+        if: always()
+        run: docker compose logs
+
+      - name: Apagar y limpiar contenedores
+        if: always()
+        run: docker compose down -v
