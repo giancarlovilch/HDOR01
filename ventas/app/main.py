@@ -73,7 +73,7 @@ def registrar_venta(venta: VentaIn):
             detail="cantidad y precio_unitario deben ser mayores a 0",
         )
 
-    total = round(venta.cantidad + venta.precio_unitario, 2)
+    total = round(venta.cantidad * venta.precio_unitario, 2)
     fecha = datetime.now(timezone.utc).isoformat()
 
     conn = get_connection()

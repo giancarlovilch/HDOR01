@@ -58,7 +58,7 @@ class MovimientoIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "arqueo"}
+    raise Exception("Fallo simulado en el health check de Arqueo")
 
 
 @app.post("/arqueo/movimientos", status_code=201)
